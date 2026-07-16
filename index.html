@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
- 
+
 <!-- ───────────────── LOGIN SCREEN ───────────────── -->
 <div id="login-screen" class="screen">
   <div class="login-card">
@@ -34,10 +34,10 @@
     </form>
   </div>
 </div>
- 
+
 <!-- ───────────────── APP SHELL ───────────────── -->
 <div id="app-screen" class="screen" hidden>
- 
+
   <header class="topbar">
     <div class="topbar-brand">
       <svg viewBox="0 0 48 48" width="26" height="26" aria-hidden="true">
@@ -53,22 +53,22 @@
       <button id="logout-btn" class="btn-ghost">Log out</button>
     </div>
   </header>
- 
+
   <nav class="tabbar" id="tabbar">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="trailer">Trailer Rent</button>
     <button class="tab-btn" data-tab="payments">Payments</button>
   </nav>
- 
+
   <main class="content">
- 
+
     <!-- ───────── DASHBOARD TAB ───────── -->
     <section id="tab-dashboard" class="tab-panel active">
- 
+
       <p class="hint-text">Tap any month to open its full earning statement. <span id="reset-data-link" style="color:var(--purple); font-weight:600; cursor:pointer; text-decoration:underline;">Reload original statement data</span></p>
- 
+
       <div class="route-divider" aria-hidden="true"></div>
- 
+
       <div class="summary-grid">
         <div class="summary-card">
           <span class="summary-label">Bakhtiar's Share — Trucks</span>
@@ -87,15 +87,20 @@
           <span class="summary-value" id="sum-remaining">$0.00</span>
         </div>
       </div>
- 
+
       <div class="section-head">
         <h2>Monthly Truck Earnings</h2>
-        <button class="btn-primary btn-sm" id="add-entry-btn">+ Add Month</button>
+        <div class="section-head-actions">
+          <button class="btn-ghost btn-sm" id="upload-statement-btn">Upload Statement</button>
+          <button class="btn-primary btn-sm" id="add-entry-btn">+ Add Month</button>
+        </div>
       </div>
- 
-      <div id="truck-groups"><!-- populated by JS --></div>
+      <input type="file" id="upload-statement-input" accept="application/pdf" hidden>
+
+      <div id="truck-cards" class="truck-cards-grid"><!-- populated by JS --></div>
+      <div id="expanded-truck-panel"><!-- populated by JS when a card is clicked --></div>
     </section>
- 
+
     <!-- ───────── TRAILER RENT TAB ───────── -->
     <section id="tab-trailer" class="tab-panel">
       <div class="route-divider" aria-hidden="true"></div>
@@ -116,7 +121,7 @@
         </table>
       </div>
     </section>
- 
+
     <!-- ───────── PAYMENTS TAB ───────── -->
     <section id="tab-payments" class="tab-panel">
       <div class="route-divider" aria-hidden="true"></div>
@@ -136,14 +141,14 @@
         </table>
       </div>
     </section>
- 
+
   </main>
 </div>
- 
+
 <!-- ───────────────── MODAL: VIEW / EDIT MONTHLY STATEMENT ───────────────── -->
 <div class="modal-overlay" id="entry-modal" hidden>
   <div class="modal-card statement-card">
- 
+
     <!-- ═══════ VIEW MODE — matches the branded PDF exactly ═══════ -->
     <div id="statement-view">
       <div class="stmt-header">
@@ -153,7 +158,7 @@
         <div class="stmt-contact">Phone: (619) 738-0570 &nbsp;|&nbsp; (210) 760-8363 &nbsp;&nbsp;&nbsp;Email: starlinkfreightinc@gmail.com</div>
       </div>
       <div class="stmt-banner">EARNING STATEMENT</div>
- 
+
       <div class="stmt-meta">
         <div class="stmt-meta-left">
           <div class="stmt-meta-label">PREPARED FOR</div>
@@ -166,14 +171,14 @@
           <tr><td>Unit / Truck</td><td id="view-unit-truck"></td></tr>
         </table>
       </div>
- 
+
       <div class="stmt-section-title">REVENUE — COMPLETED LOADS</div>
       <table class="stmt-table">
         <thead><tr><th class="stmt-num-col">#</th><th>LOAD NO.</th><th>ROUTE / BROKER</th><th class="num">AMOUNT</th><th class="num">DISPATCH FEE</th></tr></thead>
         <tbody id="view-loads-body"></tbody>
       </table>
       <div class="stmt-gross-row"><span>GROSS REVENUE</span><span class="num" id="view-gross"></span><span class="num" id="view-dispatch-total"></span></div>
- 
+
       <div class="stmt-section-title">DEDUCTIONS &amp; EXPENSES</div>
       <div class="stmt-ded-grid">
         <table class="stmt-table">
@@ -188,13 +193,13 @@
       <div class="stmt-total-ded-row"><span>TOTAL DEDUCTIONS</span><span class="num" id="view-total-deductions"></span></div>
       <div class="stmt-net-row"><span>NET EARNINGS</span><span class="num" id="view-net"></span></div>
       <div class="stmt-share-row" id="view-share-row" hidden><span id="view-share-label"></span><span class="num" id="view-share-value"></span></div>
- 
+
       <div class="stmt-footer">
         <p class="stmt-thanks">Thank you for partnering with Star Link Freight Inc.</p>
         <p>This statement reflects completed loads and applicable deductions for the period stated above.</p>
         <p>For any questions regarding this statement, please contact us at starlinkfreightinc@gmail.com.</p>
       </div>
- 
+
       <div class="modal-actions no-print">
         <button type="button" class="btn-ghost" id="entry-delete-view" hidden>Delete</button>
         <div class="modal-actions-right">
@@ -204,7 +209,7 @@
         </div>
       </div>
     </div>
- 
+
     <!-- ═══════ EDIT MODE ═══════ -->
     <form id="entry-form" hidden>
       <div class="statement-header">
@@ -233,9 +238,9 @@
           </div>
         </div>
       </div>
- 
+
       <input type="hidden" id="entry-id">
- 
+
       <div class="statement-section">
         <div class="statement-section-head">
           <span>Revenue — Completed Loads</span>
@@ -247,7 +252,7 @@
           <b id="calc-gross">$0.00</b>
         </div>
       </div>
- 
+
       <div class="statement-section">
         <div class="statement-section-head">
           <span>Deductions &amp; Expenses</span>
@@ -259,14 +264,14 @@
           <span>Other Expenses <b id="calc-other">$0.00</b></span>
         </div>
       </div>
- 
+
       <div class="statement-summary">
         <div class="summary-line"><span>Gross Revenue</span><b id="sum-gross-line">$0.00</b></div>
         <div class="summary-line"><span>Total Deductions</span><b id="sum-deductions-line">$0.00</b></div>
         <div class="summary-line net"><span>Net Earnings</span><b id="sum-net-line">$0.00</b></div>
         <div class="summary-line share" id="summary-share-row" hidden><span id="summary-share-label">Bakhtiar's Share</span><b id="sum-share-line">$0.00</b></div>
       </div>
- 
+
       <div class="modal-actions">
         <button type="button" class="btn-ghost" id="entry-delete" hidden>Delete</button>
         <div class="modal-actions-right">
@@ -277,7 +282,7 @@
     </form>
   </div>
 </div>
- 
+
 <!-- ───────────────── MODAL: ADD TRAILER INCOME ───────────────── -->
 <div class="modal-overlay" id="trailer-modal" hidden>
   <form class="modal-card" id="trailer-form">
@@ -299,7 +304,7 @@
     </div>
   </form>
 </div>
- 
+
 <!-- ───────────────── MODAL: ADD PAYMENT ───────────────── -->
 <div class="modal-overlay" id="payment-modal" hidden>
   <form class="modal-card" id="payment-form">
@@ -319,9 +324,10 @@
     </div>
   </form>
 </div>
- 
+
 <div id="toast" class="toast" hidden></div>
- 
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
