@@ -45,6 +45,8 @@ let expandedTruckId = null;
 let trailerIncomeRows = [];
 let drivingPayRows = [];
 let paymentRows = [];
+let currentEntry = null;   // the entry currently open in the modal (null while creating brand new)
+const chartInstances = {};
 
 // ───────────────── DOM refs ─────────────────
 const $ = (sel) => document.querySelector(sel);
@@ -56,12 +58,107 @@ const loginBtn = $("#login-btn");
 const userEmailEl = $("#user-email");
 const toastEl = $("#toast");
 
-function showToast(msg) {
-  toastEl.textContent = msg;
+const TOAST_ICONS = {
+  success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  info: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+};
+
+function showToast(msg, variant) {
+  toastEl.innerHTML = (variant && TOAST_ICONS[variant] ? TOAST_ICONS[variant] : "") + `<span>${msg}</span>`;
+  toastEl.className = "toast" + (variant ? " " + variant : "");
   toastEl.hidden = false;
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => { toastEl.hidden = true; }, 2600);
+  showToast._t = setTimeout(() => { toastEl.hidden = true; }, 2800);
 }
+
+// ───────────────── Branded confirm dialog (replaces window.confirm) ─────────────────
+function customConfirm(message, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.innerHTML = `
+      <div class="confirm-card">
+        <div class="confirm-icon${opts.danger ? " danger" : ""}">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <p class="confirm-message">${message}</p>
+        <div class="confirm-actions">
+          <button type="button" class="btn-ghost" data-choice="cancel">${opts.cancelLabel || "Cancel"}</button>
+          <button type="button" class="${opts.danger ? "btn-danger" : "btn-primary"}" data-choice="ok">${opts.okLabel || "OK"}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    function cleanup(result) {
+      overlay.remove();
+      resolve(result);
+    }
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanup(false);
+      const choice = e.target.closest("[data-choice]");
+      if (choice) cleanup(choice.dataset.choice === "ok");
+    });
+  });
+}
+
+// ───────────────── Dark mode ─────────────────
+const THEME_KEY = "slf-theme";
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  $("#theme-icon-sun").hidden = theme === "dark";
+  $("#theme-icon-moon").hidden = theme !== "dark";
+}
+(function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  const preferred = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme(preferred);
+})();
+$("#theme-toggle-btn").addEventListener("click", () => {
+  const current = document.documentElement.getAttribute("data-theme");
+  const next = current === "dark" ? "light" : "dark";
+  applyTheme(next);
+  localStorage.setItem(THEME_KEY, next);
+  renderCharts();
+});
+
+// ───────────────── Install banner ─────────────────
+(function initInstallBanner() {
+  const banner = $("#install-banner");
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  const dismissed = localStorage.getItem("slf-install-dismissed");
+  if (isStandalone || dismissed) return;
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  let deferredPrompt = null;
+
+  if (isIOS) {
+    $("#install-banner-text").textContent = "Install this app: tap Share, then \"Add to Home Screen\".";
+    banner.hidden = false;
+  } else {
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      $("#install-banner-text").textContent = "Install this app on your device for quick access.";
+      $("#install-banner-action").hidden = false;
+      banner.hidden = false;
+    });
+  }
+
+  $("#install-banner-action").addEventListener("click", async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+    }
+    banner.hidden = true;
+  });
+  $("#install-banner-dismiss").addEventListener("click", () => {
+    banner.hidden = true;
+    localStorage.setItem("slf-install-dismissed", "1");
+  });
+})();
 
 function money(n) {
   const v = Number(n) || 0;
@@ -117,7 +214,7 @@ let unsubEntries, unsubTrailer, unsubDriving, unsubPayments;
 async function maybeSeedHistoricalData() {
   const snap = await getDocs(collection(db, "entries"));
   if (!snap.empty) return;
-  if (!confirm("No entries found yet. Load the historical Star Link data (June 2025–July 2026) to get started?")) return;
+  if (!(await customConfirm("No entries found yet. Load the historical Star Link data to get started?"))) return;
   for (const row of HISTORICAL_ENTRIES) {
     const payload = { ...row, gross: loadsGrossTotal(row.loads), driver: itemsDriverTotal(row.items), other: itemsOtherTotal(row.items), createdAt: serverTimestamp() };
     await addDoc(collection(db, "entries"), payload);
@@ -126,7 +223,7 @@ async function maybeSeedHistoricalData() {
 }
 
 async function resetHistoricalData() {
-  if (!confirm("This replaces ALL current months with the original statement data. Any edits or new months you've added will be lost. Continue?")) return;
+  if (!(await customConfirm("This replaces ALL current months with the original statement data. Any edits or new months you've added will be lost. Continue?", { danger: true, okLabel: "Reload data" }))) return;
   const snap = await getDocs(collection(db, "entries"));
   for (const d of snap.docs) {
     await deleteDoc(doc(db, "entries", d.id));
@@ -278,6 +375,69 @@ function renderSummary() {
   $("#sum-driving").textContent = money(driving);
   $("#sum-sent").textContent = money(sent);
   $("#sum-remaining").textContent = money(remaining);
+  renderCharts();
+}
+
+// ───────────────── Charts ─────────────────
+function upsertChart(canvasId, type, data, options) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !window.Chart) return;
+  if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+  chartInstances[canvasId] = new window.Chart(canvas, {
+    type, data,
+    options: Object.assign({ responsive: true, maintainAspectRatio: false }, options),
+  });
+}
+
+function renderCharts() {
+  if (!window.Chart) return;
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+  const textColor = isDark ? "#A6A3BC" : "#6B6B78";
+
+  const truckLabels = TRUCKS.map((t) => t.name.replace("Truck ", "T"));
+  const truckShares = TRUCKS.map((t) => entries.filter((e) => e.truckId === t.id).reduce((s, e) => s + entryShare(e, t.ownership), 0));
+  upsertChart("chart-truck-share", "bar", {
+    labels: truckLabels,
+    datasets: [{ data: truckShares, backgroundColor: truckShares.map((v) => (v < 0 ? "#B8324C" : "#4F4080")), borderRadius: 4, maxBarThickness: 34 }],
+  }, {
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => money(ctx.parsed.y) } } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: textColor, font: { size: 11 } } },
+      y: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 }, callback: (v) => "$" + (v / 1000).toFixed(0) + "k" } },
+    },
+  });
+
+  const monthMap = {};
+  entries.forEach((e) => {
+    const t = TRUCKS.find((x) => x.id === e.truckId);
+    if (!t) return;
+    const key = entryMonthKeyRaw(e.monthName, e.year);
+    if (!monthMap[key]) monthMap[key] = { label: entryMonthLabel(e).replace(" 20", " '"), total: 0 };
+    monthMap[key].total += entryShare(e, t.ownership);
+  });
+  const sortedKeys = Object.keys(monthMap).map(Number).sort((a, b) => a - b);
+  upsertChart("chart-monthly-trend", "line", {
+    labels: sortedKeys.map((k) => monthMap[k].label),
+    datasets: [{ data: sortedKeys.map((k) => monthMap[k].total), borderColor: "#4F4080", backgroundColor: "rgba(79,64,128,0.14)", fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: "#4F4080" }],
+  }, {
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => money(ctx.parsed.y) } } },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: textColor, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
+      y: { grid: { color: gridColor }, ticks: { color: textColor, font: { size: 10 }, callback: (v) => "$" + (v / 1000).toFixed(0) + "k" } },
+    },
+  });
+
+  const share = grandShareTotal();
+  const trailer = trailerTotal();
+  const driving = drivingTotal();
+  upsertChart("chart-income-sources", "doughnut", {
+    labels: ["Truck Share", "Trailer Rent", "Driving Pay"],
+    datasets: [{ data: [Math.max(share, 0), Math.max(trailer, 0), Math.max(driving, 0)], backgroundColor: ["#4F4080", "#B8860B", "#1F7A3F"], borderWidth: 0 }],
+  }, {
+    plugins: { legend: { position: "bottom", labels: { color: textColor, font: { size: 10.5 }, boxWidth: 10, padding: 10 } }, tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${money(ctx.parsed)}` } } },
+    cutout: "62%",
+  });
 }
 
 // ───────────────── Rendering: Trailer income ─────────────────
@@ -297,7 +457,7 @@ function renderTrailer() {
       <td><button class="row-delete" title="Delete" data-id="${r.id}">&times;</button></td>
     `;
     tr.querySelector(".row-delete").addEventListener("click", async () => {
-      if (confirm("Delete this trailer income entry?")) await deleteDoc(doc(db, "trailerIncome", r.id));
+      if (await customConfirm("Delete this trailer income entry?", { danger: true, okLabel: "Delete" })) await deleteDoc(doc(db, "trailerIncome", r.id));
     });
     tbody.appendChild(tr);
   });
@@ -321,7 +481,7 @@ function renderDriving() {
       <td><button class="row-delete" title="Delete" data-id="${r.id}">&times;</button></td>
     `;
     tr.querySelector(".row-delete").addEventListener("click", async () => {
-      if (confirm("Delete this driving pay entry?")) await deleteDoc(doc(db, "drivingPay", r.id));
+      if (await customConfirm("Delete this driving pay entry?", { danger: true, okLabel: "Delete" })) await deleteDoc(doc(db, "drivingPay", r.id));
     });
     tbody.appendChild(tr);
   });
@@ -347,7 +507,7 @@ function renderPayments() {
       <td><button class="row-delete" title="Delete" data-id="${r.id}">&times;</button></td>
     `;
     tr.querySelector(".row-delete").addEventListener("click", async () => {
-      if (confirm("Delete this payment entry?")) await deleteDoc(doc(db, "payments", r.id));
+      if (await customConfirm("Delete this payment entry?", { danger: true, okLabel: "Delete" })) await deleteDoc(doc(db, "payments", r.id));
     });
     tbody.appendChild(tr);
   });
@@ -375,7 +535,6 @@ MONTH_NAMES.forEach((m) => {
 
 const itemsListEl = $("#entry-items-list");
 const loadsListEl = $("#entry-loads-list");
-let currentEntry = null;   // the entry currently open in the modal (null while creating brand new)
 
 function currentTruckOwnership() {
   const t = TRUCKS.find((t) => t.id === truckSelect.value);
@@ -396,6 +555,130 @@ function statementDateLabel(entry) {
   const day = String(d.getDate()).padStart(2, "0");
   const mon = d.toLocaleString("en-US", { month: "short" });
   return `${day}-${mon}-${String(entry.year).slice(-2)}`;
+}
+
+function downloadStatementPDF(entry) {
+  if (!entry) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    showToast("PDF generator didn't load — check your connection and try again.", "error");
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const truck = TRUCKS.find((t) => t.id === entry.truckId) || TRUCKS[0];
+  const loads = entry.loads && entry.loads.length ? entry.loads : (entry.gross ? [{ ref: "Legacy total", route: "Not itemized", amount: entry.gross }] : []);
+  const items = entry.items && entry.items.length ? entry.items : [
+    ...(entry.driver ? [{ desc: "Driver Payments (legacy total)", amount: entry.driver, category: "driver" }] : []),
+    ...(entry.other ? [{ desc: "Other Expenses (legacy total)", amount: entry.other, category: "other" }] : []),
+  ];
+  const gross = loadsGrossTotal(loads);
+  const dispatchTotal = loads.reduce((s, l) => s + dispatchFee(l.amount), 0);
+  const driver = itemsDriverTotal(items);
+  const other = itemsOtherTotal(items);
+  const net = gross - driver - other;
+
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 40;
+
+  doc.setFillColor(61, 49, 99);
+  doc.rect(0, 0, pageWidth, 80, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+  doc.text("STAR LINK FREIGHT INC", margin, 32);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text("MC 1757440  |  USDOT 4457566  |  8710 Datapoint Dr #6004, San Antonio, TX 78229", margin, 48);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+  doc.text("EARNING STATEMENT", margin, 68);
+
+  let y = 104;
+  doc.setTextColor(33, 32, 43);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+  doc.text("PREPARED FOR", margin, y);
+  doc.setFontSize(14);
+  doc.text(truck.name, margin, y + 18);
+
+  doc.setFontSize(9);
+  const metaX = pageWidth - margin - 210;
+  const metaRows = [
+    ["Statement No.", statementNumber(entry)],
+    ["Statement Date", statementDateLabel(entry)],
+    ["Pay Period", entry.monthName === "Annual" ? `Annual ${entry.year}` : `${entry.monthName} ${entry.year}`],
+    ["Unit / Truck", entry.unitTruck || truck.name],
+  ];
+  let my = y - 6;
+  metaRows.forEach(([label, val]) => {
+    doc.setFont("helvetica", "bold"); doc.text(label, metaX, my);
+    doc.setFont("helvetica", "normal"); doc.text(String(val), metaX + 95, my);
+    my += 14;
+  });
+
+  y = 158;
+  doc.autoTable({
+    startY: y,
+    margin: { left: margin, right: margin },
+    head: [["#", "Load / Ref", "Route / Broker", "Amount", "Dispatch Fee"]],
+    body: loads.length ? loads.map((l, i) => [i + 1, l.ref || "", l.route || "", money(l.amount), money(dispatchFee(l.amount))]) : [["", "No loads listed.", "", "", ""]],
+    theme: "grid",
+    styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5 },
+    headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: 8 },
+    bodyStyles: { fontSize: 8.5, textColor: [33, 32, 43] },
+    columnStyles: { 0: { cellWidth: 20 }, 3: { halign: "right" }, 4: { halign: "right" } },
+  });
+  y = doc.lastAutoTable.finalY + 4;
+
+  doc.setFillColor(237, 234, 246);
+  doc.rect(margin, y, pageWidth - 2 * margin, 22, "F");
+  doc.setTextColor(61, 49, 99); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+  doc.text("GROSS REVENUE", margin + 6, y + 15);
+  doc.text(money(gross), pageWidth - margin - 95, y + 15, { align: "right" });
+  doc.text(money(dispatchTotal), pageWidth - margin - 6, y + 15, { align: "right" });
+  y += 34;
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: margin, right: margin },
+    head: [["Description", "Amount"]],
+    body: items.length ? items.map((it) => [it.desc || "", money(it.amount)]) : [["No deductions listed.", ""]],
+    theme: "grid",
+    styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5 },
+    headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: 8 },
+    bodyStyles: { fontSize: 8.5, textColor: [33, 32, 43] },
+    columnStyles: { 1: { halign: "right" } },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 0 && /driver/i.test(String(data.cell.raw))) {
+        data.cell.styles.textColor = [31, 122, 63];
+        data.cell.styles.fontStyle = "bold";
+      }
+    },
+  });
+  y = doc.lastAutoTable.finalY + 12;
+
+  const boxHeight = truck.ownership < 1 ? 92 : 76;
+  doc.setFillColor(237, 234, 246);
+  doc.roundedRect(margin, y, pageWidth - 2 * margin, boxHeight, 4, 4, "F");
+  let sy = y + 18;
+  const summaryLine = (label, val, bold, color) => {
+    doc.setTextColor.apply(doc, color || [33, 32, 43]);
+    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(bold ? 11 : 9.5);
+    doc.text(label, margin + 12, sy);
+    doc.text(val, pageWidth - margin - 12, sy, { align: "right" });
+    sy += bold ? 18 : 15;
+  };
+  summaryLine("Gross Revenue", money(gross));
+  summaryLine("Driver Payments", "-" + money(driver));
+  summaryLine("Other Expenses", "-" + money(other));
+  summaryLine("NET EARNINGS", money(net), true);
+  if (truck.ownership < 1) {
+    summaryLine(`Bakhtiar's Share (${Math.round(truck.ownership * 100)}%)`, money(net * truck.ownership), true, [31, 122, 63]);
+  }
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setTextColor(107, 107, 120); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+  doc.text("Thank you for partnering with Star Link Freight Inc.", pageWidth / 2, pageHeight - 40, { align: "center" });
+  doc.text("For any questions regarding this statement, please contact us at starlinkfreightinc@gmail.com.", pageWidth / 2, pageHeight - 28, { align: "center" });
+
+  doc.save(`${truck.name.replace(/\s+/g, "_")}_${entry.monthName}${entry.year}_Statement.pdf`);
+  showToast("PDF downloaded.", "success");
 }
 
 function recalcStatementSummary() {
@@ -570,7 +853,7 @@ function openEntryModal(entry) {
 
 $("#add-entry-btn").addEventListener("click", () => openEntryModal(null));
 $("#reset-data-link")?.addEventListener("click", resetHistoricalData);
-$("#entry-print").addEventListener("click", () => window.print());
+$("#entry-print").addEventListener("click", () => downloadStatementPDF(currentEntry));
 
 $("#entry-edit-btn").addEventListener("click", () => {
   populateEditForm(currentEntry);
@@ -635,7 +918,7 @@ entryForm.addEventListener("submit", async (e) => {
 
 async function deleteCurrentEntry() {
   const id = currentEntry ? currentEntry.id : $("#entry-id").value;
-  if (id && confirm("Delete this month's entry?")) {
+  if (id && (await customConfirm("Delete this month's entry? This can't be undone.", { danger: true, okLabel: "Delete" }))) {
     await deleteDoc(doc(db, "entries", id));
     entryModal.hidden = true;
     showToast("Month deleted.");
@@ -708,6 +991,68 @@ document.querySelectorAll("[data-close-modal]").forEach((btn) => {
 document.querySelectorAll(".modal-overlay").forEach((overlay) => {
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.hidden = true; });
 });
+
+// ───────────────── Export to Excel ─────────────────
+function exportToExcel() {
+  if (!window.XLSX) {
+    showToast("Excel export didn't load — check your connection and try again.", "error");
+    return;
+  }
+
+  const entryRows = entries.map((e) => {
+    const t = TRUCKS.find((x) => x.id === e.truckId) || { name: e.truckId, ownership: 1 };
+    const net = entryNet(e);
+    return {
+      Truck: t.name,
+      Month: e.monthName,
+      Year: e.year,
+      "Gross Revenue": entryGrossTotal(e),
+      "Driver Payments": entryDriverTotal(e),
+      "Other Expenses": entryOtherTotal(e),
+      "Net Earnings": net,
+      "Ownership %": Math.round(t.ownership * 100) + "%",
+      "Bakhtiar's Share": entryShare(e, t.ownership),
+    };
+  }).sort((a, b) => a.Truck.localeCompare(b.Truck) || entryMonthKeyRaw(a.Month, a.Year) - entryMonthKeyRaw(b.Month, b.Year));
+
+  const trailerRows = trailerIncomeRows.map((r) => ({ Month: r.month, "Truck Renting": r.truck, Note: r.note, Amount: r.amount }));
+  const drivingRows = drivingPayRows.map((r) => ({ Month: r.month, Truck: r.truck, Note: r.note, Amount: r.amount }));
+  const paymentRowsOut = (() => {
+    let running = 0;
+    return paymentRows.map((r) => {
+      running += Number(r.amount) || 0;
+      return { Date: r.date, "Note / Method": r.note, "Amount Sent": r.amount, "Balance After": running };
+    });
+  })();
+
+  const share = grandShareTotal();
+  const trailer = trailerTotal();
+  const driving = drivingTotal();
+  const owed = share + trailer + driving;
+  const sent = paymentsTotal();
+  const summaryRows = [
+    { Item: "Bakhtiar's Share — Trucks", Amount: share },
+    { Item: "Trailer Rental Income", Amount: trailer },
+    { Item: "Bakhtiar's Driving Pay", Amount: driving },
+    { Item: "Total Owed to Bakhtiar", Amount: owed },
+    { Item: "Total Sent to Bakhtiar", Amount: sent },
+    { Item: "Remaining Balance Owed", Amount: owed - sent },
+  ];
+
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(summaryRows), "Summary");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(entryRows), "Truck Earnings");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(trailerRows), "Trailer Income");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(drivingRows), "Driving Pay");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(paymentRowsOut), "Payments");
+
+  const dateStr = new Date().toISOString().slice(0, 10);
+  window.XLSX.writeFile(wb, `Bakhtiar_Tracker_Export_${dateStr}.xlsx`);
+  showToast("Excel file downloaded.", "success");
+}
+function entryMonthKeyRaw(monthName, year) { return (Number(year) || 0) * 100 + MONTH_NAMES.indexOf(monthName); }
+
+$("#export-btn").addEventListener("click", exportToExcel);
 
 // ───────────────── Upload Statement (PDF) ─────────────────
 const MONTH_NUM = { January: 1, February: 2, March: 3, April: 4, May: 5, June: 6, July: 7, August: 8, September: 9, October: 10, November: 11, December: 12 };
