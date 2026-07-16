@@ -43,6 +43,7 @@ const HISTORICAL_ENTRIES = [{"truckId": "02", "monthName": "June", "year": 2026,
 let entries = [];
 let expandedTruckId = null;
 let trailerIncomeRows = [];
+let drivingPayRows = [];
 let paymentRows = [];
 
 // ───────────────── DOM refs ─────────────────
@@ -111,7 +112,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 });
 
 // ───────────────── Firestore listeners ─────────────────
-let unsubEntries, unsubTrailer, unsubPayments;
+let unsubEntries, unsubTrailer, unsubDriving, unsubPayments;
 
 async function maybeSeedHistoricalData() {
   const snap = await getDocs(collection(db, "entries"));
@@ -147,6 +148,11 @@ function startListeners() {
     renderTrailer();
     renderSummary();
   });
+  unsubDriving = onSnapshot(query(collection(db, "drivingPay"), orderBy("createdAt", "asc")), (snap) => {
+    drivingPayRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderDriving();
+    renderSummary();
+  });
   unsubPayments = onSnapshot(query(collection(db, "payments"), orderBy("date", "asc")), (snap) => {
     paymentRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderPayments();
@@ -158,8 +164,9 @@ function startListeners() {
 function stopListeners() {
   unsubEntries && unsubEntries();
   unsubTrailer && unsubTrailer();
+  unsubDriving && unsubDriving();
   unsubPayments && unsubPayments();
-  entries = []; trailerIncomeRows = []; paymentRows = [];
+  entries = []; trailerIncomeRows = []; drivingPayRows = []; paymentRows = [];
 }
 
 // ───────────────── Derived totals ─────────────────
@@ -182,6 +189,7 @@ function grandShareTotal() {
   }, 0);
 }
 function trailerTotal() { return trailerIncomeRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
+function drivingTotal() { return drivingPayRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
 function paymentsTotal() { return paymentRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
 
 // ───────────────── Rendering: Dashboard ─────────────────
@@ -261,11 +269,13 @@ function renderExpandedTruckPanel() {
 function renderSummary() {
   const share = grandShareTotal();
   const trailer = trailerTotal();
-  const owed = share + trailer;
+  const driving = drivingTotal();
+  const owed = share + trailer + driving;
   const sent = paymentsTotal();
   const remaining = owed - sent;
   $("#sum-share").textContent = money(share);
   $("#sum-trailer").textContent = money(trailer);
+  $("#sum-driving").textContent = money(driving);
   $("#sum-sent").textContent = money(sent);
   $("#sum-remaining").textContent = money(remaining);
 }
@@ -292,6 +302,30 @@ function renderTrailer() {
     tbody.appendChild(tr);
   });
   $("#trailer-total").textContent = money(trailerTotal());
+}
+
+// ───────────────── Rendering: Driving pay ─────────────────
+function renderDriving() {
+  const tbody = $("#driving-rows");
+  tbody.innerHTML = "";
+  if (drivingPayRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-row">No driving pay logged yet.</td></tr>`;
+  }
+  drivingPayRows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.month || ""}</td>
+      <td>${r.truck || ""}</td>
+      <td>${r.note || ""}</td>
+      <td class="num">${money(r.amount)}</td>
+      <td><button class="row-delete" title="Delete" data-id="${r.id}">&times;</button></td>
+    `;
+    tr.querySelector(".row-delete").addEventListener("click", async () => {
+      if (confirm("Delete this driving pay entry?")) await deleteDoc(doc(db, "drivingPay", r.id));
+    });
+    tbody.appendChild(tr);
+  });
+  $("#driving-total").textContent = money(drivingTotal());
 }
 
 // ───────────────── Rendering: Payments ─────────────────
@@ -609,6 +643,25 @@ async function deleteCurrentEntry() {
 }
 $("#entry-delete").addEventListener("click", deleteCurrentEntry);
 $("#entry-delete-view").addEventListener("click", deleteCurrentEntry);
+
+// ───────────────── Modal: driving pay ─────────────────
+const drivingModal = $("#driving-modal");
+$("#add-driving-btn").addEventListener("click", () => {
+  $("#driving-form").reset();
+  drivingModal.hidden = false;
+});
+$("#driving-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await addDoc(collection(db, "drivingPay"), {
+    month: $("#driving-month").value.trim(),
+    truck: $("#driving-truck").value.trim(),
+    note: $("#driving-note").value.trim(),
+    amount: parseFloat($("#driving-amount").value) || 0,
+    createdAt: serverTimestamp(),
+  });
+  drivingModal.hidden = true;
+  showToast("Driving pay logged.");
+});
 
 // ───────────────── Modal: trailer income ─────────────────
 const trailerModal = $("#trailer-modal");
