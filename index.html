@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Link Freight — Bakhtiar Earnings Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ───────────────── LOGIN SCREEN ───────────────── -->
+<div id="login-screen" class="screen">
+  <div class="login-card">
+    <div class="brand-mark">
+      <svg viewBox="0 0 48 48" width="40" height="40" aria-hidden="true">
+        <path d="M4 30 L4 16 Q4 12 8 12 L26 12 Q30 12 30 16 L30 30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M30 20 L38 20 L44 26 L44 30 L30 30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="13" cy="34" r="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="37" cy="34" r="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      </svg>
+    </div>
+    <h1>Star Link Freight</h1>
+    <p class="login-sub">Bakhtiar Truck Earnings Tracker</p>
+    <form id="login-form">
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" autocomplete="username" required>
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" autocomplete="current-password" required>
+      <button type="submit" class="btn-primary" id="login-btn">Log in</button>
+      <p class="login-error" id="login-error" hidden></p>
+    </form>
+  </div>
+</div>
+
+<!-- ───────────────── APP SHELL ───────────────── -->
+<div id="app-screen" class="screen" hidden>
+
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg viewBox="0 0 48 48" width="26" height="26" aria-hidden="true">
+        <path d="M4 30 L4 16 Q4 12 8 12 L26 12 Q30 12 30 16 L30 30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M30 20 L38 20 L44 26 L44 30 L30 30" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="13" cy="34" r="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+        <circle cx="37" cy="34" r="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+      </svg>
+      <span>Star Link Freight</span>
+    </div>
+    <div class="topbar-user">
+      <span id="user-email"></span>
+      <button id="logout-btn" class="btn-ghost">Log out</button>
+    </div>
+  </header>
+
+  <nav class="tabbar" id="tabbar">
+    <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="trailer">Trailer Rent</button>
+    <button class="tab-btn" data-tab="payments">Payments</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ───────── DASHBOARD TAB ───────── -->
+    <section id="tab-dashboard" class="tab-panel active">
+
+      <p class="hint-text">Tap any month to open its full earning statement. <span id="reset-data-link" style="color:var(--purple); font-weight:600; cursor:pointer; text-decoration:underline;">Reload original statement data</span></p>
+
+      <div class="route-divider" aria-hidden="true"></div>
+
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span class="summary-label">Bakhtiar's Share — Trucks</span>
+          <span class="summary-value" id="sum-share">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Trailer Rental Income</span>
+          <span class="summary-value" id="sum-trailer">$0.00</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">Total Sent to Bakhtiar</span>
+          <span class="summary-value" id="sum-sent">$0.00</span>
+        </div>
+        <div class="summary-card highlight">
+          <span class="summary-label">Remaining Balance Owed</span>
+          <span class="summary-value" id="sum-remaining">$0.00</span>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>Monthly Truck Earnings</h2>
+        <button class="btn-primary btn-sm" id="add-entry-btn">+ Add Month</button>
+      </div>
+
+      <div id="truck-groups"><!-- populated by JS --></div>
+    </section>
+
+    <!-- ───────── TRAILER RENT TAB ───────── -->
+    <section id="tab-trailer" class="tab-panel">
+      <div class="route-divider" aria-hidden="true"></div>
+      <div class="section-head">
+        <h2>Trailer Rental Income</h2>
+        <button class="btn-primary btn-sm" id="add-trailer-btn">+ Log Payment</button>
+      </div>
+      <p class="hint-text">Income Bakhtiar receives when other trucks in the company rent his trailers.</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Month</th><th>Truck Renting</th><th>Note</th><th class="num">Amount</th><th></th></tr>
+          </thead>
+          <tbody id="trailer-rows"></tbody>
+          <tfoot>
+            <tr class="totals-row"><td colspan="3">Total</td><td class="num" id="trailer-total">$0.00</td><td></td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+    <!-- ───────── PAYMENTS TAB ───────── -->
+    <section id="tab-payments" class="tab-panel">
+      <div class="route-divider" aria-hidden="true"></div>
+      <div class="section-head">
+        <h2>Payments to Bakhtiar</h2>
+        <button class="btn-primary btn-sm" id="add-payment-btn">+ Log Payment</button>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Date</th><th>Note / Method</th><th class="num">Amount Sent</th><th class="num">Balance After</th><th></th></tr>
+          </thead>
+          <tbody id="payment-rows"></tbody>
+          <tfoot>
+            <tr class="totals-row"><td colspan="2">Total Sent</td><td class="num" id="payment-total">$0.00</td><td></td><td></td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ───────────────── MODAL: ADD / EDIT MONTHLY STATEMENT ───────────────── -->
+<div class="modal-overlay" id="entry-modal" hidden>
+  <div class="modal-card statement-card">
+    <form id="entry-form">
+      <div class="statement-header">
+        <div class="statement-header-top">
+          <span class="statement-company">Star Link Freight Inc</span>
+          <span class="statement-title">Earning Statement</span>
+        </div>
+        <div class="statement-meta-row">
+          <div>
+            <label for="entry-truck">Truck</label>
+            <select id="entry-truck" required></select>
+          </div>
+          <div>
+            <label for="entry-month-name">Month</label>
+            <select id="entry-month-name" required></select>
+          </div>
+          <div>
+            <label for="entry-year">Year</label>
+            <input type="number" id="entry-year" placeholder="2026" min="2020" max="2100" required>
+          </div>
+        </div>
+      </div>
+
+      <input type="hidden" id="entry-id">
+
+      <div class="statement-section">
+        <div class="statement-section-head">
+          <span>Revenue — Completed Loads</span>
+          <button type="button" class="btn-ghost btn-xs" id="add-load-btn">+ Add Load</button>
+        </div>
+        <div id="entry-loads-list"></div>
+        <div class="statement-subtotal-row">
+          <span>Gross Revenue</span>
+          <b id="calc-gross">$0.00</b>
+        </div>
+      </div>
+
+      <div class="statement-section">
+        <div class="statement-section-head">
+          <span>Deductions &amp; Expenses</span>
+          <button type="button" class="btn-ghost btn-xs" id="add-item-btn">+ Add Line</button>
+        </div>
+        <div id="entry-items-list"></div>
+        <div class="statement-subtotal-row two-col">
+          <span>Driver Payments <b id="calc-driver">$0.00</b></span>
+          <span>Other Expenses <b id="calc-other">$0.00</b></span>
+        </div>
+      </div>
+
+      <div class="statement-summary">
+        <div class="summary-line"><span>Gross Revenue</span><b id="sum-gross-line">$0.00</b></div>
+        <div class="summary-line"><span>Total Deductions</span><b id="sum-deductions-line">$0.00</b></div>
+        <div class="summary-line net"><span>Net Earnings</span><b id="sum-net-line">$0.00</b></div>
+        <div class="summary-line share" id="summary-share-row" hidden><span id="summary-share-label">Bakhtiar's Share</span><b id="sum-share-line">$0.00</b></div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost no-print" id="entry-delete" hidden>Delete</button>
+        <div class="modal-actions-right no-print">
+          <button type="button" class="btn-ghost" id="entry-print">Print / Save as PDF</button>
+          <button type="button" class="btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn-primary">Save Statement</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ───────────────── MODAL: ADD TRAILER INCOME ───────────────── -->
+<div class="modal-overlay" id="trailer-modal" hidden>
+  <form class="modal-card" id="trailer-form">
+    <h3>Log Trailer Rental Income</h3>
+    <label for="trailer-month">Month</label>
+    <input type="text" id="trailer-month" placeholder="e.g. September 2026" required>
+    <label for="trailer-truck">Truck Renting</label>
+    <input type="text" id="trailer-truck" placeholder="e.g. Truck 07" required>
+    <label for="trailer-note">Note</label>
+    <input type="text" id="trailer-note" placeholder="e.g. Reefer trailer, 2 weeks">
+    <label for="trailer-amount">Amount</label>
+    <input type="number" step="0.01" id="trailer-amount" required>
+    <div class="modal-actions">
+      <div></div>
+      <div class="modal-actions-right">
+        <button type="button" class="btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ───────────────── MODAL: ADD PAYMENT ───────────────── -->
+<div class="modal-overlay" id="payment-modal" hidden>
+  <form class="modal-card" id="payment-form">
+    <h3>Log Payment to Bakhtiar</h3>
+    <label for="payment-date">Date</label>
+    <input type="date" id="payment-date" required>
+    <label for="payment-note">Note / Method</label>
+    <input type="text" id="payment-note" placeholder="e.g. Zelle transfer">
+    <label for="payment-amount">Amount Sent</label>
+    <input type="number" step="0.01" id="payment-amount" required>
+    <div class="modal-actions">
+      <div></div>
+      <div class="modal-actions-right">
+        <button type="button" class="btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
