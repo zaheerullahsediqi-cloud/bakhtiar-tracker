@@ -67,10 +67,10 @@
 
   <nav class="tabbar" id="tabbar">
     <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+    <button class="tab-btn" data-tab="expenses">Expenses</button>
     <button class="tab-btn" data-tab="driving">Driving Pay</button>
     <button class="tab-btn" data-tab="trailer">Trailer Rent</button>
     <button class="tab-btn" data-tab="payments">Payments</button>
-    <button class="tab-btn" data-tab="expenses">Expenses</button>
   </nav>
 
   <main class="content">
@@ -78,7 +78,7 @@
     <!-- ───────── DASHBOARD TAB ───────── -->
     <section id="tab-dashboard" class="tab-panel active">
 
-      <p class="hint-text">Tap any month to open its full earning statement. <span id="reset-data-link" style="color:var(--purple); font-weight:600; cursor:pointer; text-decoration:underline;">Reload original statement data</span></p>
+      <p class="hint-text">Tap any month to open its full earning statement.</p>
 
       <div class="route-divider" aria-hidden="true"></div>
 
@@ -131,6 +131,27 @@
 
       <div id="truck-cards" class="truck-cards-grid"><!-- populated by JS --></div>
       <div id="expanded-truck-panel"><!-- populated by JS when a card is clicked --></div>
+    </section>
+
+    <!-- ───────── EXPENSES TAB ───────── -->
+    <section id="tab-expenses" class="tab-panel">
+      <div class="route-divider" aria-hidden="true"></div>
+      <div class="section-head">
+        <h2>Bakhtiar's Out-of-Pocket Expenses</h2>
+        <button class="btn-primary btn-sm" id="add-expense-btn">+ Log Expense</button>
+      </div>
+      <p class="hint-text">Amounts Bakhtiar has personally paid out of pocket for the business. These are added to Remaining Balance Owed since they need to be refunded to him.</p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th></th></tr>
+          </thead>
+          <tbody id="expense-rows"></tbody>
+          <tfoot>
+            <tr class="totals-row"><td colspan="2">Total</td><td class="num" id="expense-total">$0.00</td><td></td></tr>
+          </tfoot>
+        </table>
+      </div>
     </section>
 
     <!-- ───────── DRIVING PAY TAB ───────── -->
@@ -190,27 +211,6 @@
           <tbody id="payment-rows"></tbody>
           <tfoot>
             <tr class="totals-row"><td colspan="2">Total Sent</td><td class="num" id="payment-total">$0.00</td><td></td><td></td></tr>
-          </tfoot>
-        </table>
-      </div>
-    </section>
-
-    <!-- ───────── EXPENSES TAB ───────── -->
-    <section id="tab-expenses" class="tab-panel">
-      <div class="route-divider" aria-hidden="true"></div>
-      <div class="section-head">
-        <h2>Bakhtiar's Out-of-Pocket Expenses</h2>
-        <button class="btn-primary btn-sm" id="add-expense-btn">+ Log Expense</button>
-      </div>
-      <p class="hint-text">Amounts Bakhtiar has personally paid out of pocket for the business. These are added to Remaining Balance Owed since they need to be refunded to him.</p>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr><th>Date</th><th>Description</th><th class="num">Amount</th><th></th></tr>
-          </thead>
-          <tbody id="expense-rows"></tbody>
-          <tfoot>
-            <tr class="totals-row"><td colspan="2">Total</td><td class="num" id="expense-total">$0.00</td><td></td></tr>
           </tfoot>
         </table>
       </div>

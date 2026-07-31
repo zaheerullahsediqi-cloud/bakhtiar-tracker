@@ -223,19 +223,6 @@ async function maybeSeedHistoricalData() {
   showToast("Historical data loaded.");
 }
 
-async function resetHistoricalData() {
-  if (!(await customConfirm("This replaces ALL current months with the original statement data. Any edits or new months you've added will be lost. Continue?", { danger: true, okLabel: "Reload data" }))) return;
-  const snap = await getDocs(collection(db, "entries"));
-  for (const d of snap.docs) {
-    await deleteDoc(doc(db, "entries", d.id));
-  }
-  for (const row of HISTORICAL_ENTRIES) {
-    const payload = { ...row, gross: loadsGrossTotal(row.loads), driver: itemsDriverTotal(row.items), other: itemsOtherTotal(row.items), createdAt: serverTimestamp() };
-    await addDoc(collection(db, "entries"), payload);
-  }
-  showToast("Reloaded original statement data.");
-}
-
 function startListeners() {
   unsubEntries = onSnapshot(collection(db, "entries"), (snap) => {
     entries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -916,7 +903,6 @@ function openEntryModal(entry) {
 }
 
 $("#add-entry-btn").addEventListener("click", () => openEntryModal(null));
-$("#reset-data-link")?.addEventListener("click", resetHistoricalData);
 $("#entry-print").addEventListener("click", () => downloadStatementPDF(currentEntry));
 
 $("#entry-edit-btn").addEventListener("click", () => {
