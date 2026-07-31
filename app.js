@@ -608,106 +608,138 @@ function downloadStatementPDF(entry) {
   const other = itemsOtherTotal(items);
   const net = gross - driver - other;
 
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 40;
-
-  doc.setFillColor(61, 49, 99);
-  doc.rect(0, 0, pageWidth, 80, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(18);
-  doc.text("STAR LINK FREIGHT INC", margin, 32);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  doc.text("MC 1757440  |  USDOT 4457566  |  8710 Datapoint Dr #6004, San Antonio, TX 78229", margin, 48);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(10);
-  doc.text("EARNING STATEMENT", margin, 68);
-
-  let y = 104;
-  doc.setTextColor(33, 32, 43);
-  doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-  doc.text("PREPARED FOR", margin, y);
-  doc.setFontSize(14);
-  doc.text(truck.name, margin, y + 18);
-
-  doc.setFontSize(9);
-  const metaX = pageWidth - margin - 210;
-  const metaRows = [
-    ["Statement No.", statementNumber(entry)],
-    ["Statement Date", statementDateLabel(entry)],
-    ["Pay Period", entry.monthName === "Annual" ? `Annual ${entry.year}` : `${entry.monthName} ${entry.year}`],
-    ["Unit / Truck", entry.unitTruck || truck.name],
+  // Tiered compactness: start roomy, and only shrink as far as needed to keep
+  // the whole statement on a single page. All tiers stay legible (7pt minimum).
+  const TIERS = [
+    { tableFont: 8.5, headFont: 8, cellPad: 4, headerH: 80, metaY: 104, tableStartY: 158, boxGap: 4, boxH: 22, boxGapAfter: 34, sumGap: 12, lineBold: 18, lineNormal: 15, boxPadTop: 18, footerReserve: 40 },
+    { tableFont: 7.5, headFont: 7, cellPad: 2.5, headerH: 68, metaY: 92, tableStartY: 140, boxGap: 3, boxH: 19, boxGapAfter: 28, sumGap: 8, lineBold: 15, lineNormal: 12, boxPadTop: 15, footerReserve: 34 },
+    { tableFont: 6.5, headFont: 6.5, cellPad: 1.5, headerH: 60, metaY: 82, tableStartY: 124, boxGap: 2, boxH: 16, boxGapAfter: 22, sumGap: 6, lineBold: 12.5, lineNormal: 10.5, boxPadTop: 12, footerReserve: 30 },
   ];
-  let my = y - 6;
-  metaRows.forEach(([label, val]) => {
-    doc.setFont("helvetica", "bold"); doc.text(label, metaX, my);
-    doc.setFont("helvetica", "normal"); doc.text(String(val), metaX + 95, my);
-    my += 14;
-  });
 
-  y = 158;
-  doc.autoTable({
-    startY: y,
-    margin: { left: margin, right: margin },
-    head: [["#", "Load / Ref", "Route / Broker", "Amount", "Dispatch Fee"]],
-    body: loads.length ? loads.map((l, i) => [i + 1, l.ref || "", l.route || "", money(l.amount), money(dispatchFee(l.amount))]) : [["", "No loads listed.", "", "", ""]],
-    theme: "grid",
-    styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5 },
-    headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: 8 },
-    bodyStyles: { fontSize: 8.5, textColor: [33, 32, 43] },
-    columnStyles: { 0: { cellWidth: 20 }, 3: { halign: "right" }, 4: { halign: "right" } },
-  });
-  y = doc.lastAutoTable.finalY + 4;
+  function build(tier) {
+    const doc = new jsPDF({ unit: "pt", format: "letter" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 36;
 
-  doc.setFillColor(237, 234, 246);
-  doc.rect(margin, y, pageWidth - 2 * margin, 22, "F");
-  doc.setTextColor(61, 49, 99); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-  doc.text("GROSS REVENUE", margin + 6, y + 15);
-  doc.text(money(gross), pageWidth - margin - 95, y + 15, { align: "right" });
-  doc.text(money(dispatchTotal), pageWidth - margin - 6, y + 15, { align: "right" });
-  y += 34;
+    doc.setFillColor(61, 49, 99);
+    doc.rect(0, 0, pageWidth, tier.headerH, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(18);
+    doc.text("STAR LINK FREIGHT INC", margin, tier.headerH * 0.4);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    doc.text("MC 1757440  |  USDOT 4457566  |  8710 Datapoint Dr #6004, San Antonio, TX 78229", margin, tier.headerH * 0.6);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10);
+    doc.text("EARNING STATEMENT", margin, tier.headerH * 0.85);
 
-  doc.autoTable({
-    startY: y,
-    margin: { left: margin, right: margin },
-    head: [["Description", "Amount"]],
-    body: items.length ? items.map((it) => [it.desc || "", money(it.amount)]) : [["No deductions listed.", ""]],
-    theme: "grid",
-    styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5 },
-    headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: 8 },
-    bodyStyles: { fontSize: 8.5, textColor: [33, 32, 43] },
-    columnStyles: { 1: { halign: "right" } },
-    didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 0 && /driver/i.test(String(data.cell.raw))) {
-        data.cell.styles.textColor = [31, 122, 63];
-        data.cell.styles.fontStyle = "bold";
-      }
-    },
-  });
-  y = doc.lastAutoTable.finalY + 12;
+    let y = tier.metaY;
+    doc.setTextColor(33, 32, 43);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+    doc.text("PREPARED FOR", margin, y);
+    doc.setFontSize(14);
+    doc.text(truck.name, margin, y + 18);
 
-  const boxHeight = truck.ownership < 1 ? 92 : 76;
-  doc.setFillColor(237, 234, 246);
-  doc.roundedRect(margin, y, pageWidth - 2 * margin, boxHeight, 4, 4, "F");
-  let sy = y + 18;
-  const summaryLine = (label, val, bold, color) => {
-    doc.setTextColor.apply(doc, color || [33, 32, 43]);
-    doc.setFont("helvetica", bold ? "bold" : "normal"); doc.setFontSize(bold ? 11 : 9.5);
-    doc.text(label, margin + 12, sy);
-    doc.text(val, pageWidth - margin - 12, sy, { align: "right" });
-    sy += bold ? 18 : 15;
-  };
-  summaryLine("Gross Revenue", money(gross));
-  summaryLine("Driver Payments", "-" + money(driver));
-  summaryLine("Other Expenses", "-" + money(other));
-  summaryLine("NET EARNINGS", money(net), true);
-  if (truck.ownership < 1) {
-    summaryLine(`Bakhtiar's Share (${Math.round(truck.ownership * 100)}%)`, money(net * truck.ownership), true, [31, 122, 63]);
+    doc.setFontSize(9);
+    const metaX = pageWidth - margin - 210;
+    const metaRows = [
+      ["Statement No.", statementNumber(entry)],
+      ["Statement Date", statementDateLabel(entry)],
+      ["Pay Period", entry.monthName === "Annual" ? `Annual ${entry.year}` : `${entry.monthName} ${entry.year}`],
+      ["Unit / Truck", entry.unitTruck || truck.name],
+    ];
+    let my = y - 6;
+    metaRows.forEach(([label, val]) => {
+      doc.setFont("helvetica", "bold"); doc.text(label, metaX, my);
+      doc.setFont("helvetica", "normal"); doc.text(String(val), metaX + 95, my);
+      my += 14;
+    });
+
+    y = tier.tableStartY;
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [["#", "Load / Ref", "Route / Broker", "Amount", "Dispatch Fee"]],
+      body: loads.length ? loads.map((l, i) => [i + 1, l.ref || "", l.route || "", money(l.amount), money(dispatchFee(l.amount))]) : [["", "No loads listed.", "", "", ""]],
+      theme: "grid",
+      styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5, cellPadding: tier.cellPad, fontSize: tier.tableFont },
+      headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: tier.headFont },
+      bodyStyles: { fontSize: tier.tableFont, textColor: [33, 32, 43] },
+      columnStyles: { 0: { cellWidth: 20 }, 3: { halign: "right" }, 4: { halign: "right" } },
+    });
+    y = doc.lastAutoTable.finalY + tier.boxGap;
+
+    doc.setFillColor(237, 234, 246);
+    doc.rect(margin, y, pageWidth - 2 * margin, tier.boxH, "F");
+    doc.setTextColor(61, 49, 99); doc.setFont("helvetica", "bold"); doc.setFontSize(tier.tableFont + 0.5);
+    doc.text("GROSS REVENUE", margin + 6, y + tier.boxH * 0.7);
+    doc.text(money(gross), pageWidth - margin - 95, y + tier.boxH * 0.7, { align: "right" });
+    doc.text(money(dispatchTotal), pageWidth - margin - 6, y + tier.boxH * 0.7, { align: "right" });
+    y += tier.boxGapAfter;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [["Description", "Amount"]],
+      body: items.length ? items.map((it) => [it.desc || "", money(it.amount)]) : [["No deductions listed.", ""]],
+      theme: "grid",
+      styles: { font: "helvetica", lineColor: [227, 224, 236], lineWidth: 0.5, cellPadding: tier.cellPad, fontSize: tier.tableFont },
+      headStyles: { fillColor: [237, 234, 246], textColor: [61, 49, 99], fontStyle: "bold", fontSize: tier.headFont },
+      bodyStyles: { fontSize: tier.tableFont, textColor: [33, 32, 43] },
+      columnStyles: { 1: { halign: "right" } },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 0 && /driver/i.test(String(data.cell.raw))) {
+          data.cell.styles.textColor = [31, 122, 63];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+    y = doc.lastAutoTable.finalY + tier.sumGap;
+
+    const summaryLines = [
+      { label: "Gross Revenue", val: money(gross), bold: false },
+      { label: "Driver Payments", val: "-" + money(driver), bold: false },
+      { label: "Other Expenses", val: "-" + money(other), bold: false },
+      { label: "NET EARNINGS", val: money(net), bold: true },
+    ];
+    if (truck.ownership < 1) {
+      summaryLines.push({ label: `Bakhtiar's Share (${Math.round(truck.ownership * 100)}%)`, val: money(net * truck.ownership), bold: true, color: [31, 122, 63] });
+    }
+    const boxHeight = tier.boxPadTop + summaryLines.reduce((s, l) => s + (l.bold ? tier.lineBold : tier.lineNormal), 0);
+    const pageHeightGuard = doc.internal.pageSize.getHeight();
+    // Safety net: if even the most compact tier can't fit the summary box +
+    // footer on the current page, push them to a fresh page rather than
+    // silently drawing (and losing) them off the bottom edge.
+    if (y + boxHeight + tier.footerReserve + 14 > pageHeightGuard - 10) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.setFillColor(237, 234, 246);
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, boxHeight, 4, 4, "F");
+    let sy = y + tier.boxPadTop;
+    summaryLines.forEach((line) => {
+      doc.setTextColor.apply(doc, line.color || [33, 32, 43]);
+      doc.setFont("helvetica", line.bold ? "bold" : "normal"); doc.setFontSize(line.bold ? tier.tableFont + 2.5 : tier.tableFont + 1);
+      doc.text(line.label, margin + 12, sy);
+      doc.text(line.val, pageWidth - margin - 12, sy, { align: "right" });
+      sy += line.bold ? tier.lineBold : tier.lineNormal;
+    });
+    y += boxHeight;
+
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const footerY = Math.max(y + 14, pageHeight - tier.footerReserve);
+    doc.setTextColor(107, 107, 120); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    doc.text("Thank you for partnering with Star Link Freight Inc.", pageWidth / 2, footerY, { align: "center" });
+    doc.text("For any questions regarding this statement, please contact us at starlinkfreightinc@gmail.com.", pageWidth / 2, footerY + 12, { align: "center" });
+
+    return doc;
   }
 
-  const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setTextColor(107, 107, 120); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
-  doc.text("Thank you for partnering with Star Link Freight Inc.", pageWidth / 2, pageHeight - 40, { align: "center" });
-  doc.text("For any questions regarding this statement, please contact us at starlinkfreightinc@gmail.com.", pageWidth / 2, pageHeight - 28, { align: "center" });
+  // Try each tier from roomiest to most compact; stop at the first one that
+  // fits on a single page. Falls back to the most compact tier if the
+  // statement is unusually large.
+  let doc = build(TIERS[0]);
+  for (let i = 1; i < TIERS.length && doc.internal.getNumberOfPages() > 1; i++) {
+    doc = build(TIERS[i]);
+  }
 
   doc.save(`${truck.name.replace(/\s+/g, "_")}_${entry.monthName}${entry.year}_Statement.pdf`);
   showToast("PDF downloaded.", "success");
