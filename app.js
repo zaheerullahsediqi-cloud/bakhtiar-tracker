@@ -45,6 +45,7 @@ let expandedTruckId = null;
 let trailerIncomeRows = [];
 let drivingPayRows = [];
 let paymentRows = [];
+let expenseRows = [];
 let currentEntry = null;   // the entry currently open in the modal (null while creating brand new)
 const chartInstances = {};
 
@@ -209,7 +210,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 });
 
 // ───────────────── Firestore listeners ─────────────────
-let unsubEntries, unsubTrailer, unsubDriving, unsubPayments;
+let unsubEntries, unsubTrailer, unsubDriving, unsubPayments, unsubExpenses;
 
 async function maybeSeedHistoricalData() {
   const snap = await getDocs(collection(db, "entries"));
@@ -255,6 +256,11 @@ function startListeners() {
     renderPayments();
     renderSummary();
   });
+  unsubExpenses = onSnapshot(query(collection(db, "expenses"), orderBy("date", "asc")), (snap) => {
+    expenseRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderExpenses();
+    renderSummary();
+  });
   maybeSeedHistoricalData();
 }
 
@@ -263,7 +269,8 @@ function stopListeners() {
   unsubTrailer && unsubTrailer();
   unsubDriving && unsubDriving();
   unsubPayments && unsubPayments();
-  entries = []; trailerIncomeRows = []; drivingPayRows = []; paymentRows = [];
+  unsubExpenses && unsubExpenses();
+  entries = []; trailerIncomeRows = []; drivingPayRows = []; paymentRows = []; expenseRows = [];
 }
 
 // ───────────────── Derived totals ─────────────────
@@ -288,6 +295,7 @@ function grandShareTotal() {
 function trailerTotal() { return trailerIncomeRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
 function drivingTotal() { return drivingPayRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
 function paymentsTotal() { return paymentRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
+function expensesTotal() { return expenseRows.reduce((s, r) => s + (Number(r.amount) || 0), 0); }
 
 // ───────────────── Rendering: Dashboard ─────────────────
 function renderDashboard() {
@@ -367,7 +375,8 @@ function renderSummary() {
   const share = grandShareTotal();
   const trailer = trailerTotal();
   const driving = drivingTotal();
-  const owed = share + trailer + driving;
+  const expenses = expensesTotal();
+  const owed = share + trailer + driving + expenses;
   const sent = paymentsTotal();
   const remaining = owed - sent;
   $("#sum-share").textContent = money(share);
@@ -512,6 +521,29 @@ function renderPayments() {
     tbody.appendChild(tr);
   });
   $("#payment-total").textContent = money(running);
+}
+
+// ───────────────── Rendering: Expenses (Bakhtiar's out-of-pocket) ─────────────────
+function renderExpenses() {
+  const tbody = $("#expense-rows");
+  tbody.innerHTML = "";
+  if (expenseRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-row">No expenses logged yet.</td></tr>`;
+  }
+  expenseRows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.date || ""}</td>
+      <td>${r.desc || ""}</td>
+      <td class="num">${money(r.amount)}</td>
+      <td><button class="row-delete" title="Delete" data-id="${r.id}">&times;</button></td>
+    `;
+    tr.querySelector(".row-delete").addEventListener("click", async () => {
+      if (await customConfirm("Delete this expense entry?", { danger: true, okLabel: "Delete" })) await deleteDoc(doc(db, "expenses", r.id));
+    });
+    tbody.appendChild(tr);
+  });
+  $("#expense-total").textContent = money(expensesTotal());
 }
 
 // ───────────────── Modal: monthly entry (view + edit) ─────────────────
@@ -984,6 +1016,25 @@ $("#payment-form").addEventListener("submit", async (e) => {
   showToast("Payment logged.");
 });
 
+// ───────────────── Modal: expense (Bakhtiar's out-of-pocket) ─────────────────
+const expenseModal = $("#expense-modal");
+$("#add-expense-btn").addEventListener("click", () => {
+  $("#expense-form").reset();
+  $("#expense-date").valueAsDate = new Date();
+  expenseModal.hidden = false;
+});
+$("#expense-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await addDoc(collection(db, "expenses"), {
+    date: $("#expense-date").value,
+    desc: $("#expense-desc").value.trim(),
+    amount: parseFloat($("#expense-amount").value) || 0,
+    createdAt: serverTimestamp(),
+  });
+  expenseModal.hidden = true;
+  showToast("Expense logged.");
+});
+
 // ───────────────── Modal close (shared) ─────────────────
 document.querySelectorAll("[data-close-modal]").forEach((btn) => {
   btn.addEventListener("click", () => { btn.closest(".modal-overlay").hidden = true; });
@@ -1024,16 +1075,19 @@ function exportToExcel() {
       return { Date: r.date, "Note / Method": r.note, "Amount Sent": r.amount, "Balance After": running };
     });
   })();
+  const expenseRowsOut = expenseRows.map((r) => ({ Date: r.date, Description: r.desc, Amount: r.amount }));
 
   const share = grandShareTotal();
   const trailer = trailerTotal();
   const driving = drivingTotal();
-  const owed = share + trailer + driving;
+  const expenses = expensesTotal();
+  const owed = share + trailer + driving + expenses;
   const sent = paymentsTotal();
   const summaryRows = [
     { Item: "Bakhtiar's Share — Trucks", Amount: share },
     { Item: "Trailer Rental Income", Amount: trailer },
     { Item: "Bakhtiar's Driving Pay", Amount: driving },
+    { Item: "Bakhtiar's Out-of-Pocket Expenses", Amount: expenses },
     { Item: "Total Owed to Bakhtiar", Amount: owed },
     { Item: "Total Sent to Bakhtiar", Amount: sent },
     { Item: "Remaining Balance Owed", Amount: owed - sent },
@@ -1045,6 +1099,7 @@ function exportToExcel() {
   window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(trailerRows), "Trailer Income");
   window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(drivingRows), "Driving Pay");
   window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(paymentRowsOut), "Payments");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(expenseRowsOut), "Expenses");
 
   const dateStr = new Date().toISOString().slice(0, 10);
   window.XLSX.writeFile(wb, `Bakhtiar_Tracker_Export_${dateStr}.xlsx`);
